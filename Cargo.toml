@@ -1,0 +1,11 @@
+[package]
+name = "rs-libhackrf"
+version = "0.1.0"
+authors = ["William Speirs <bill.speirs@gmail.com>"]
+edition = "2018"
+
+[build-dependencies]
+bindgen = "0.46"
+
+[dependencies]
+
