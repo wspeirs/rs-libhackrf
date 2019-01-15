@@ -4,12 +4,16 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+#[macro_use]
+extern crate log;
+
 use std::fmt;
 use std::ffi::CStr;
 
 ///
 /// Conversion of enum hackrf_error that includes the result of a call to hackrf_error_name
 ///
+#[derive(Debug)]
 pub enum Error {
     SUCCESS,
     TRUE,
@@ -78,30 +82,76 @@ impl Error {
     }
 }
 
+/// Info about each HackRF device found
+#[derive(Debug)]
+pub struct DeviceInfo<'a> {
+    serial: &'a str,
+    board_id: hackrf_usb_board_id,
+}
+
 ///
 /// hackrf library
 pub struct HackRF {
-
+    device_list: *mut hackrf_device_list_t
 }
 
 impl HackRF {
-    pub fn new() -> Result<(), Error> {
+    pub fn new() -> Result<HackRF, Error> {
+        simple_logger::init_with_level(log::Level::Trace).unwrap();
+
         unsafe {
-            let ret = hackrf_init();
+            let ret = hackrf_init();  // init the library
 
             if ret != hackrf_error_HACKRF_SUCCESS {
                 return Err(Error::from_code(ret));
             }
 
-            Ok( () )
+            // get and save the raw pointer to the device list
+            // because we'll want to free this on drop
+            let device_list : *mut hackrf_device_list_t = hackrf_device_list();
+
+            if device_list.is_null() {
+                panic!("Return from hackrf_device_list is NULL");
+            }
+
+            Ok( HackRF { device_list } )
         }
+    }
+
+    pub fn get_device_list(&self) -> Result<Vec<DeviceInfo>, Error> {
+        let mut ret = Vec::new();
+
+        unsafe {
+            info!("DEV COUNT: {}", (*self.device_list).devicecount);
+            info!("USB DEV COUNT: {}", (*self.device_list).usb_devicecount);
+
+            for i in 0..(*self.device_list).devicecount as isize {
+                debug!("SERIAL: {:?}", (*self.device_list).serial_numbers.offset(i));
+                debug!("BOARD ID: {:?}", *((*self.device_list).usb_board_ids.offset(i)));
+
+                ret.push(DeviceInfo {
+                    serial: CStr::from_ptr(*((*self.device_list).serial_numbers.offset(i))).to_str().expect("Error converting serial number"),
+                    board_id: *((*self.device_list).usb_board_ids.offset(i))
+                })
+            }
+        }
+
+        debug!("RET: {:?}", ret);
+
+        Ok(ret)
     }
 }
 
 impl Drop for HackRF {
     fn drop(&mut self) {
         unsafe {
+            // free the device list
+            hackrf_device_list_free(self.device_list);
+
+            // call exit for the library
             let ret = hackrf_exit();
+
+            trace!("Called hackrf_exit()");
 
             if ret != hackrf_error_HACKRF_SUCCESS {
                 panic!("Error dropping HackRF: {}", Error::from_code(ret));
@@ -115,20 +165,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works()
-    {
-        unsafe {
-            let ret = hackrf_init();
+    fn it_works() {
+        let hrf = HackRF::new().expect("Error creating HackRF");
 
-            if ret != hackrf_error_HACKRF_SUCCESS {
-                let err = hackrf_error_name(ret);
-
-                println!("{:?}", err);
-            }
-
-            let list = hackrf_device_list();
-
-            println!("LIST: {:?}", *list);
-        }
+        hrf.get_device_list();
     }
 }

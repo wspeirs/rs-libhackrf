@@ -8,4 +8,6 @@ edition = "2018"
 bindgen = "0.46"
 
 [dependencies]
+log = "0.4"
+simple_logger = "1.0"
 
