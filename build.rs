@@ -16,6 +16,8 @@ fn main() {
         .rustified_enum("operacake_ports")
         .rustified_enum("sweep_style")
         .use_core()
+        .derive_debug(true)
+        .impl_debug(true)
         .generate() // Finish the builder and generate the bindings.
         // Unwrap the Result and panic on failure.
         .expect("Unable to generate bindings");
@@ -25,3 +27,4 @@ fn main() {
 
     bindings.write_to_file(out_path.join("bindings.rs")).expect("Couldn't write bindings!");
 }
+

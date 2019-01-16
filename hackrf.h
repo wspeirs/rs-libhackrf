@@ -25,6 +25,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #define __HACKRF_H__
 
 #include <stdint.h>
+#include "/usr/include/libusb-1.0/libusb.h"
+
 
 #ifdef _WIN32
    #define ADD_EXPORTS
@@ -50,6 +52,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #define SAMPLES_PER_BLOCK 8192
 #define BYTES_PER_BLOCK 16384
 #define MAX_SWEEP_RANGES 10
+#define TRANSFER_COUNT 4
+#define TRANSFER_BUFFER_SIZE 262144
 
 enum hackrf_error {
 	HACKRF_SUCCESS = 0,
@@ -134,6 +138,20 @@ struct hackrf_device_list {
 typedef struct hackrf_device_list hackrf_device_list_t;
 
 typedef int (*hackrf_sample_block_cb_fn)(hackrf_transfer* transfer);
+
+struct hackrf_device {
+	libusb_device_handle* usb_device;
+	struct libusb_transfer** transfers;
+	hackrf_sample_block_cb_fn callback;
+	volatile int transfer_thread_started; /* volatile shared between threads (read only) */
+	pthread_t transfer_thread;
+	volatile int streaming; /* volatile shared between threads (read only) */
+	void* rx_ctx;
+	void* tx_ctx;
+	volatile int do_exit;
+	unsigned char buffer[TRANSFER_COUNT * TRANSFER_BUFFER_SIZE];
+};
+
 
 #ifdef __cplusplus
 extern "C"
