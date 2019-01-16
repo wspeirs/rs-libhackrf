@@ -15,7 +15,7 @@ use crate::{
     hackrf_error_HACKRF_ERROR_STREAMING_EXIT_CALLED,
     hackrf_error_HACKRF_ERROR_USB_API_VERSION,
     hackrf_error_HACKRF_ERROR_NOT_LAST_DEVICE,
-
+    hackrf_error_HACKRF_ERROR_OTHER
 };
 
 
@@ -61,33 +61,53 @@ impl  fmt::Display for Error {
     }
 }
 
-impl  Error {
-    fn get_error_string(error_code: i32) -> String {
-        unsafe {
-            let char_ptr = crate::hackrf_error_name(error_code);
-            let c_str = CStr::from_ptr(char_ptr);
+fn get_error_string(error_code: i32) -> String {
+    unsafe {
+        let char_ptr = crate::hackrf_error_name(error_code);
+        let c_str = CStr::from_ptr(char_ptr);
 
-
-            return String::from(c_str.to_str().expect("Error converting hackrf_error_name"));
-        }
+        return String::from(c_str.to_str().expect("Error converting hackrf_error_name"));
     }
+}
 
-    pub fn from_code(error_code: i32) -> Error {
+impl From<i32> for Error {
+    fn from(error_code: i32) -> Self {
         match error_code {
             hackrf_error_HACKRF_SUCCESS => Error::SUCCESS,
             hackrf_error_HACKRF_TRUE => Error::TRUE,
-            hackrf_error_HACKRF_ERROR_INVALID_PARAM => Error::INVALID_PARAM(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_NOT_FOUND => Error::NOT_FOUND(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_BUSY => Error::BUSY(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_NO_MEM => Error::NO_MEMORY(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_LIBUSB => Error::LIBUSB(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_THREAD => Error::THREAD(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_STREAMING_THREAD_ERR => Error::STREAMING_THREAD_ERR(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_STREAMING_STOPPED => Error::STREAMING_STOPPED(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_STREAMING_EXIT_CALLED => Error::STREAMING_EXIT_CALLED(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_USB_API_VERSION => Error::USB_API_VERSION(Error::get_error_string(error_code)),
-            hackrf_error_HACKRF_ERROR_NOT_LAST_DEVICE => Error::NOT_LAST_DEVICE(Error::get_error_string(error_code)),
-            _ => Error::OTHER(Error::get_error_string(error_code))
+            hackrf_error_HACKRF_ERROR_INVALID_PARAM => Error::INVALID_PARAM(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_NOT_FOUND => Error::NOT_FOUND(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_BUSY => Error::BUSY(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_NO_MEM => Error::NO_MEMORY(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_LIBUSB => Error::LIBUSB(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_THREAD => Error::THREAD(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_STREAMING_THREAD_ERR => Error::STREAMING_THREAD_ERR(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_STREAMING_STOPPED => Error::STREAMING_STOPPED(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_STREAMING_EXIT_CALLED => Error::STREAMING_EXIT_CALLED(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_USB_API_VERSION => Error::USB_API_VERSION(get_error_string(error_code)),
+            hackrf_error_HACKRF_ERROR_NOT_LAST_DEVICE => Error::NOT_LAST_DEVICE(get_error_string(error_code)),
+            _ => Error::OTHER(get_error_string(error_code))
+        }
+    }
+}
+
+impl Into<i32> for Error {
+    fn into(self) -> i32 {
+        match self {
+            Error::SUCCESS => hackrf_error_HACKRF_SUCCESS,
+            Error::TRUE => hackrf_error_HACKRF_TRUE,
+            Error::INVALID_PARAM(_) => hackrf_error_HACKRF_ERROR_INVALID_PARAM,
+            Error::NOT_FOUND(_) =>  hackrf_error_HACKRF_ERROR_NOT_FOUND,
+            Error::BUSY(_) =>  hackrf_error_HACKRF_ERROR_BUSY,
+            Error::NO_MEMORY(_) =>  hackrf_error_HACKRF_ERROR_NO_MEM,
+            Error::LIBUSB(_) =>  hackrf_error_HACKRF_ERROR_LIBUSB,
+            Error::THREAD(_) =>  hackrf_error_HACKRF_ERROR_THREAD,
+            Error::STREAMING_THREAD_ERR(_) =>  hackrf_error_HACKRF_ERROR_STREAMING_THREAD_ERR,
+            Error::STREAMING_STOPPED(_) =>  hackrf_error_HACKRF_ERROR_STREAMING_STOPPED,
+            Error::STREAMING_EXIT_CALLED(_) =>  hackrf_error_HACKRF_ERROR_STREAMING_EXIT_CALLED,
+            Error::USB_API_VERSION(_) =>  hackrf_error_HACKRF_ERROR_USB_API_VERSION,
+            Error::NOT_LAST_DEVICE(_) =>  hackrf_error_HACKRF_ERROR_NOT_LAST_DEVICE,
+            Error::OTHER(_) =>  hackrf_error_HACKRF_ERROR_OTHER
         }
     }
 }
