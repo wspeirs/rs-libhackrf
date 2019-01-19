@@ -42,7 +42,8 @@ use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
-use std::rc::Rc;
+use std::mem::*;
+
 
 #[derive(Debug)]
 pub enum State {
@@ -55,59 +56,58 @@ pub enum State {
 #[derive(Debug)]
 pub struct Device<'a> {
     pub(super) device_ptr: *mut hackrf_device,
+    pub(super) callback_ptr: *mut c_void,
     pub(super) state: State,
     phantom: PhantomData<&'a hackrf_device>
 }
 
-#[repr(C)]
-struct CallbackContext<'a, T> {
-    context: Option<&'a mut T>,
-    function: &'a mut FnMut(&[u8], &Option<&mut T>) -> Error
-}
-
 impl <'a> Device<'a> {
+
     pub fn new(device: *mut hackrf_device) -> Device<'a> {
         Device {
             device_ptr: device,
+            callback_ptr: ptr::null_mut(),
             state: State::IDLE,
             phantom: PhantomData
         }
     }
 
     // wrapper function for start_rx
-    unsafe extern "C" fn rx_callback<C>(transfer: *mut hackrf_transfer) -> i32
-    where C: std::fmt::Debug {
+    unsafe extern "C" fn rx_callback(transfer: *mut hackrf_transfer) -> i32 {
         // construct a slice given the pointer and valid length
         let buffer :&[u8] = slice::from_raw_parts((*transfer).buffer, (*transfer).valid_length as usize);
 
-        // construct the context, "casting" back to a CallbackContext
-        let ctx = (*(*transfer).device).rx_ctx;
-        let ctx  = &mut *(ctx as *mut Box<CallbackContext<C>>);
+        // get the callback context out of the transfer struct
+//        let callback :*mut c_void = (*transfer).rx_ctx;
+//        let mut callback :Box<Box<dyn FnMut(&[u8]) -> Error>> = Box::from_raw(callback as _);
+//        let callback = Box::leak(callback);
+//        let callback = callback.as_mut();
+
+        // this leaks memory, so we have to capture the pointer, save it in the device, and free it when stop is called
+        let callback = (*transfer).rx_ctx as *mut *mut dyn FnMut(&[u8]) -> Error;
+        let callback = &mut **callback;
+
 
         // call the function, and convert the Error into an i32
-        Into::into((ctx.function)(buffer, &ctx.context))
+        Into::into(callback(buffer))
     }
 
-    pub fn start_rx<T, F>(&mut self, mut callback: F, rx_ctx: Option<&mut T>) -> Result<(), Error>
-    where F: FnMut(&[u8], &Option<&mut T>) -> Error,
-    T: std::fmt::Debug {
+    pub fn start_rx<F>(&mut self, callback: F) -> Result<(), Error>
+    where F: FnMut(&[u8]) -> Error
+    {
         unsafe {
-            // package up our context and function
-            let mut ctx = Box::new(CallbackContext {
-                context: rx_ctx,
-                function: &mut callback
-            });
+            let ctx :Box<dyn FnMut(&[u8]) -> Error> = Box::new(callback);
+            let ctx = Box::new(ctx);
+            let ctx :*mut c_void = Box::into_raw(ctx) as _;
 
-            debug!("ctx.context: {:?}", ctx.context);
+            self.callback_ptr = ctx;
 
-            // convert our context into a void*
-//            let ctx = &mut ctx as *mut _ as *mut c_void;
-            let ctx = Box::leak(ctx) as *mut _ as *mut c_void;
+//            let mut cb : Box<Box<dyn FnMut(&[u8]) -> Error>> = Box::from_raw(ctx as _);
+//            let fun = cb.as_mut().as_mut();
+//            fun(Vec::<u8>::new().as_slice());
 
-            debug!("start_rx ctx: {:?}", ctx);
-
-            // call the underlying function
-            let ret = hackrf_start_rx(self.device_ptr, Some(Device::rx_callback::<T>), ctx);
+//            // call the underlying function
+            let ret = hackrf_start_rx(self.device_ptr, Some(Device::rx_callback), ctx);
 
             if ret != hackrf_error_HACKRF_SUCCESS {
                 return Err(Error::from(ret));
@@ -126,6 +126,11 @@ impl <'a> Device<'a> {
 
             if ret != hackrf_error_HACKRF_SUCCESS {
                 return Err(Error::from(ret));
+            }
+
+            if !self.callback_ptr.is_null() {
+                // capture the box, so it'll drop and free the memory
+                let mut callback :Box<Box<dyn FnMut(&[u8]) -> Error>> = Box::from_raw(self.callback_ptr as _);
             }
         }
 
@@ -436,17 +441,33 @@ mod tests {
         let mut hrf = HackRF::new().expect("Error creating HackRF");
         let mut dev = hrf.open_device(0).expect("Error creating device; maybe not plugged in?");
 
-        let ctx = None::<&mut i32>;
+//        let mut x = 7;
 
-        dev.start_rx(|b, c| {
-//            println!("BUFFER LEN: {}", b.len());
-//            println!("CONTEXT: {:?}", c);
+        let callback = move |b: &[u8]| {
+            println!("BUFFER LEN: {}", b.len());
+//            println!("{:?}", b);
+
+//            x += b.len();
 
             Error::SUCCESS
-        }, ctx).expect("Error calling start_rx");
+        };
 
-        thread::sleep_ms(250);
+        dev.start_rx(callback).expect("Error calling start_rx");
 
+        thread::sleep_ms(50);
+
+//        println!("X: {}", x);
+
+        dev.stop_rx().expect("Error calling stop_rx");
+
+        println!("Calling second time");
+        dev.start_rx(callback).expect("Error calling start_rx");
+        thread::sleep_ms(50);
+        dev.stop_rx().expect("Error calling stop_rx");
+
+        println!("Calling third time");
+        dev.start_rx(callback).expect("Error calling start_rx");
+        thread::sleep_ms(50);
         dev.stop_rx().expect("Error calling stop_rx");
     }
 

@@ -104,8 +104,6 @@ impl HackRF {
                 return Err(Error::NOT_FOUND(String::from("hackrf_device_list_open returned null pointer")));
             }
 
-            debug!("DEV: {:?}", *device_ptr);
-
             // make sure we successfully opened the device
             if ret != hackrf_error_HACKRF_SUCCESS {
                 let err = Error::from(ret);
@@ -133,6 +131,7 @@ impl Drop for HackRF {
 
                 if hackrf_is_streaming(device_ptr) != hackrf_error_HACKRF_TRUE {
                     (*device_ptr).do_exit = 1i32;
+                    debug!("SET DO EXIT");
                     std::thread::yield_now(); // need the other thread to stop it's work
                 }
 
