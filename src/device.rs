@@ -42,7 +42,6 @@ use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
-use std::mem::*;
 
 
 #[derive(Debug)]
@@ -325,6 +324,10 @@ impl <'a> Device<'a> {
     /// baseband filter selection, you must do so after setting the sample rate.
     pub fn set_sample_rate(&self, freq_hz: f64) -> Result<(), Error> {
         unsafe {
+            if freq_hz < 4_000_000.0 || freq_hz > 20_000_000.0 {
+                return Err(Error::INVALID_PARAM(format!("Frequency must be between 4MHz and 20MHz")))
+            }
+
             let ret = hackrf_set_sample_rate(self.device_ptr, freq_hz);
 
             if ret != hackrf_error_HACKRF_SUCCESS {
