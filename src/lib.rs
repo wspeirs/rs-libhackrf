@@ -6,6 +6,9 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate lazy_static;
+
 
 #[cfg(test)] use std::sync::{Once, ONCE_INIT};
 #[cfg(test)] static LOGGER_INIT: Once = ONCE_INIT;

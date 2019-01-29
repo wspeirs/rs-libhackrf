@@ -32,6 +32,7 @@ use crate::{
     hackrf_set_vga_gain,
     hackrf_set_txvga_gain,
     hackrf_set_antenna_enable,
+    hackrf_compute_baseband_filter_bw,
     hackrf_set_hw_sync_mode
 };
 
@@ -42,6 +43,24 @@ use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
+use num_complex::Complex32;
+use rayon::prelude::*;
+
+// create our lookup table
+lazy_static! {
+    static ref LOOKUP_TABLE: Vec<Complex32> = {
+        let mut lookup_table = Vec::with_capacity(65536);
+
+        for i in 0..0x1_0000 {
+            lookup_table.push(Complex32::new(
+                ((i & 0xFF) as i8) as f32 * (1.0f32 / 128.0f32),
+                ((i >> 8) as i8) as f32 * (1.0f32 / 128.0f32)
+            ));
+        }
+
+        lookup_table
+    };
+}
 
 
 #[derive(Debug)]
@@ -76,26 +95,32 @@ impl <'a> Device<'a> {
         // construct a slice given the pointer and valid length
         let buffer :&[u8] = slice::from_raw_parts((*transfer).buffer, (*transfer).valid_length as usize);
 
-        // get the callback context out of the transfer struct
-//        let callback :*mut c_void = (*transfer).rx_ctx;
-//        let mut callback :Box<Box<dyn FnMut(&[u8]) -> Error>> = Box::from_raw(callback as _);
-//        let callback = Box::leak(callback);
-//        let callback = callback.as_mut();
+        // convert into IQ values
+        let mut complex = Vec::<Complex32>::with_capacity(buffer.len());
+
+        complex.par_extend(buffer.par_chunks(2).map(|n| {
+            let mut i :u16 = n[1] as u16;
+
+            i <<= 8;
+            i += n[0] as u16;
+
+            LOOKUP_TABLE.get(i as usize).expect(&format!("Got value without lookup: {}", i))
+        }));
 
         // this leaks memory, so we have to capture the pointer, save it in the device, and free it when stop is called
-        let callback = (*transfer).rx_ctx as *mut *mut dyn FnMut(&[u8]) -> Error;
+        let callback = (*transfer).rx_ctx as *mut *mut dyn FnMut(&[Complex32]) -> Error;
         let callback = &mut **callback;
 
 
         // call the function, and convert the Error into an i32
-        Into::into(callback(buffer))
+        Into::into(callback(complex.as_slice()))
     }
 
     pub fn start_rx<F>(&mut self, callback: F) -> Result<(), Error>
-    where F: FnMut(&[u8]) -> Error
+    where F: FnMut(&[Complex32]) -> Error
     {
         unsafe {
-            let ctx :Box<dyn FnMut(&[u8]) -> Error> = Box::new(callback);
+            let ctx :Box<dyn FnMut(&[Complex32]) -> Error> = Box::new(callback);
             let ctx = Box::new(ctx);
             let ctx :*mut c_void = Box::into_raw(ctx) as _;
 
@@ -218,6 +243,12 @@ impl <'a> Device<'a> {
         }
 
         Ok( () )
+    }
+
+    pub fn compute_baseband_filter_bandwidth(&self, bandwidth: u32) -> u32 {
+        unsafe {
+            return hackrf_compute_baseband_filter_bw(bandwidth);
+        }
     }
 
     pub fn board_id_read(&self) -> Result<u8, Error> {
@@ -446,7 +477,7 @@ mod tests {
 
 //        let mut x = 7;
 
-        let callback = move |b: &[u8]| {
+        let callback = move |b: &[Complex32]| {
             println!("BUFFER LEN: {}", b.len());
 //            println!("{:?}", b);
 
@@ -457,9 +488,7 @@ mod tests {
 
         dev.start_rx(callback).expect("Error calling start_rx");
 
-        thread::sleep_ms(50);
-
-//        println!("X: {}", x);
+        thread::sleep_ms(5000);
 
         dev.stop_rx().expect("Error calling stop_rx");
 
@@ -568,7 +597,7 @@ mod tests {
         let mut hrf = HackRF::new().expect("Error creating HackRF");
         let dev = hrf.open_device(0).expect("Error creating device; maybe not plugged in?");
 
-        assert!(!dev.set_sample_rate(2000.0).is_err());
+        assert!(!dev.set_sample_rate(4_100_000.0).is_err());
     }
 
     #[test]
