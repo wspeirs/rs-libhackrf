@@ -43,19 +43,18 @@ use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
-use num_complex::Complex32;
 use rayon::prelude::*;
 
 // create our lookup table
 lazy_static! {
-    static ref LOOKUP_TABLE: Vec<Complex32> = {
+    static ref LOOKUP_TABLE: Vec<[f32; 2]> = {
         let mut lookup_table = Vec::with_capacity(65536);
 
         for i in 0..0x1_0000 {
-            lookup_table.push(Complex32::new(
+            lookup_table.push([
                 ((i & 0xFF) as i8) as f32 * (1.0f32 / 128.0f32),
                 ((i >> 8) as i8) as f32 * (1.0f32 / 128.0f32)
-            ));
+            ]);
         }
 
         lookup_table
@@ -96,19 +95,19 @@ impl <'a> Device<'a> {
         let buffer :&[u8] = slice::from_raw_parts((*transfer).buffer, (*transfer).valid_length as usize);
 
         // convert into IQ values
-        let mut complex = Vec::<Complex32>::with_capacity(buffer.len());
+        let mut complex = Vec::<f32>::with_capacity(buffer.len());
 
-        complex.par_extend(buffer.par_chunks(2).map(|n| {
+        complex.extend(buffer.chunks(2).flat_map(|n| {
             let mut i :u16 = n[1] as u16;
 
             i <<= 8;
             i += n[0] as u16;
 
-            LOOKUP_TABLE.get(i as usize).expect(&format!("Got value without lookup: {}", i))
+            LOOKUP_TABLE.get(i as usize).expect(&format!("Got a value with no lookup: {}", i))
         }));
 
         // this leaks memory, so we have to capture the pointer, save it in the device, and free it when stop is called
-        let callback = (*transfer).rx_ctx as *mut *mut dyn FnMut(&[Complex32]) -> Error;
+        let callback = (*transfer).rx_ctx as *mut *mut dyn FnMut(&[f32]) -> Error;
         let callback = &mut **callback;
 
 
@@ -117,20 +116,16 @@ impl <'a> Device<'a> {
     }
 
     pub fn start_rx<F>(&mut self, callback: F) -> Result<(), Error>
-    where F: FnMut(&[Complex32]) -> Error
+    where F: FnMut(&[f32]) -> Error
     {
         unsafe {
-            let ctx :Box<dyn FnMut(&[Complex32]) -> Error> = Box::new(callback);
+            let ctx :Box<dyn FnMut(&[f32]) -> Error> = Box::new(callback);
             let ctx = Box::new(ctx);
             let ctx :*mut c_void = Box::into_raw(ctx) as _;
 
             self.callback_ptr = ctx;
 
-//            let mut cb : Box<Box<dyn FnMut(&[u8]) -> Error>> = Box::from_raw(ctx as _);
-//            let fun = cb.as_mut().as_mut();
-//            fun(Vec::<u8>::new().as_slice());
-
-//            // call the underlying function
+            // call the underlying function
             let ret = hackrf_start_rx(self.device_ptr, Some(Device::rx_callback), ctx);
 
             if ret != hackrf_error_HACKRF_SUCCESS {
@@ -477,7 +472,7 @@ mod tests {
 
 //        let mut x = 7;
 
-        let callback = move |b: &[Complex32]| {
+        let callback = move |b: &[f32]| {
             println!("BUFFER LEN: {}", b.len());
 //            println!("{:?}", b);
 
